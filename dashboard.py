@@ -2,142 +2,169 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
+from io import BytesIO
 
-# 1. Pagina instellingen
+# 1. Pagina instellingen (MOET als eerste regel na de imports)
 st.set_page_config(layout="wide", page_title="Elektra Monitor Rotterdam")
 
-# 2. De "Agressieve" CSS voor 100% witte tekst overal
+# 2. De "Master" CSS (Met dubbele ringen en kleuren)
 st.markdown("""
     <style>
-    /* Achtergrond */
     .stApp { background-color: #0e1117 !important; }
     
-    /* BASIS: Alles naar wit */
-    html, body, [data-testid="stAppViewContainer"] {
+    html, body, [data-testid="stAppViewContainer"], .stMarkdown, p, span, label {
         color: white !important;
     }
 
-    /* SPECIFIEK VOOR RADIO BUTTONS (Dag, Week, Maand, Jaar) */
-    div[data-testid="stRadio"] label p {
-        color: white !important;
-        font-size: 16px !important;
-    }
-    
-    /* De tekst naast de rondjes */
-    div[data-testid="stMarkdownContainer"] p {
-        color: white !important;
-    }
-
-    /* Forceer wit op alle koppen en labels */
-    h1, h2, h3, .stMarkdown, p, span, label {
-        color: white !important;
-    }
-
-    /* Sidebar styling */
     section[data-testid="stSidebar"] {
         background-color: #1a1c24 !important;
         border-right: 1px solid #3e4452;
     }
 
-    /* Metric containers bovenin */
+    /* Basis styling voor de cirkels */
     .metric-container {
         display: flex;
-        justify-content: space-between;
-        gap: 10px;
-        margin-bottom: 20px;
+        justify-content: space-around;
+        gap: 15px;
+        margin: 40px 0;
     }
-    .metric-box {
-        background-color: #1a1c24;
-        border: 1px solid #3e4452;
-        padding: 15px;
-        border-radius: 12px;
-        flex: 1;
+    
+    .metric-circle {
+        position: relative;
+        width: 190px;
+        height: 190px;
+        border-radius: 50%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
         text-align: center;
+        background-color: rgba(26, 28, 36, 0.8);
+        z-index: 1;
     }
-    .m-label { color: #bbbbbb; font-size: 14px; text-transform: uppercase; }
-    .m-value { color: #ffffff; font-size: 28px; font-weight: bold; }
+
+    /* De binnenste lichtgrijs/zwarte ring */
+    .metric-circle::after {
+        content: "";
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        right: 8px;
+        bottom: 8px;
+        border-radius: 50%;
+        border: 2px solid rgba(150, 150, 150, 0.2); 
+        z-index: -1;
+    }
+
+    /* Buitenste gekleurde ringen */
+    .blue-ring { border: 6px solid #00d4ff; box-shadow: 0 0 15px rgba(0, 212, 255, 0.3); }
+    .green-ring { border: 6px solid #2ecc71; box-shadow: 0 0 15px rgba(46, 204, 113, 0.3); }
+    .orange-ring { border: 6px solid #e67e22; box-shadow: 0 0 15px rgba(230, 126, 34, 0.3); }
+
+    .m-label { 
+        color: #bbbbbb !important; 
+        font-size: 11px; 
+        text-transform: uppercase; 
+        margin-bottom: 5px;
+        letter-spacing: 1px;
+    }
+    .m-value { 
+        color: #ffffff !important; 
+        font-size: 24px; 
+        font-weight: bold !important;
+    }
+
+    .stDownloadButton button {
+        background-color: #1a1c24 !important;
+        color: white !important;
+        border: 1px solid #00d4ff !important;
+        width: 100%;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# 3. Data genereren (RTM-001 t/m RTM-200)
+# 3. Data genereren (Gecorrigeerd voor stabiliteit)
 @st.cache_data
-def get_data():
+def load_data():
     ids = [f"RTM-{i:03d}" for i in range(1, 201)]
     df_locs = pd.DataFrame({
         'Aansluiting_ID': ids,
         'lat': np.random.uniform(51.88, 51.95, 200),
         'lon': np.random.uniform(4.42, 4.52, 200)
     })
+    
     date_rng = pd.date_range(start='2020-01-01', end='2026-12-31', freq='D')
-    all_data = []
-    # Simulatie voor demo
-    for id in ids[:50]:
-        temp_df = pd.DataFrame({
-            'Timestamp': date_rng,
-            'Watt': np.random.randint(200, 1500, size=len(date_rng)),
-            'Aansluiting_ID': id
-        })
-        all_data.append(temp_df)
-    return df_locs, pd.concat(all_data)
+    # Simulatie data voor de actieve selectie
+    return df_locs, date_rng
 
-df_locaties, df_verbruik_totaal = get_data()
+df_locaties, date_range = load_data()
 
 # 4. SIDEBAR
-st.sidebar.markdown("<h2 style='color: white;'>FILTERS</h2>", unsafe_allow_html=True)
-selected_year = st.sidebar.selectbox("Jaar:", [2020, 2021, 2022, 2023, 2024, 2025, 2026], index=6)
-selected_id = st.sidebar.selectbox("Aansluitpunt:", df_locaties['Aansluiting_ID'])
+logo_url = "https://upload.wikimedia.org/wikipedia/commons/5/53/Gemeente_Rotterdam.svg"
+st.sidebar.markdown(f'<div style="text-align: center; padding: 10px;"><img src="{logo_url}" width="160"></div><hr style="border: 0.5px solid #3e4452;">', unsafe_allow_html=True)
 
-# 5. DATA FILTERING
-filtered_df = df_verbruik_totaal[
-    (df_verbruik_totaal['Aansluiting_ID'] == selected_id) & 
-    (df_verbruik_totaal['Timestamp'].dt.year == int(selected_year))
-]
+st.sidebar.subheader("INSTELLINGEN")
+selected_year = st.sidebar.selectbox("Selecteer Jaar:", [2020, 2021, 2022, 2023, 2024, 2025, 2026], index=6)
+selected_id = st.sidebar.selectbox("Selecteer Aansluitpunt:", df_locaties['Aansluiting_ID'])
 
-# 6. TITEL & METRICS
-st.markdown(f"<h1 style='color: white;'>⚡ Monitor: {selected_id} ({selected_year})</h1>", unsafe_allow_html=True)
+# 5. DATA FILTERING (Simulatie per gekozen punt)
+np.random.seed(int(selected_id.split('-')[1]) + selected_year)
+filtered_df = pd.DataFrame({
+    'Timestamp': date_range[date_range.year == selected_year],
+    'Watt': np.random.randint(200, 1500, size=len(date_range[date_range.year == selected_year]))
+})
 
-if not filtered_df.empty:
-    huidig_verbruik = filtered_df['Watt'].iloc[-1]
-    gem_verbruik = int(filtered_df['Watt'].mean())
-    totaal_jaar = round(filtered_df['Watt'].sum() / 1000, 1)
+# 6. HEADER & CIRKELS
+st.markdown(f"<h1>⚡ Monitor: {selected_id} ({selected_year})</h1>", unsafe_allow_html=True)
 
-    st.markdown(f"""
-        <div class="metric-container">
-            <div class="metric-box"><div class="m-label">Laatste Meting</div><div class="m-value">{huidig_verbruik} Watt</div></div>
-            <div class="metric-box"><div class="m-label">Gemiddelde</div><div class="m-value">{gem_verbruik} Watt</div></div>
-            <div class="metric-box"><div class="m-label">Totaal Jaar</div><div class="m-value">{totaal_jaar} kWh</div></div>
+huidig_verbruik = filtered_df['Watt'].iloc[-1]
+gem_verbruik = int(filtered_df['Watt'].mean())
+totaal_jaar = round(filtered_df['Watt'].sum() / 1000, 1)
+
+st.markdown(f"""
+    <div class="metric-container">
+        <div class="metric-circle blue-ring">
+            <div class="m-label">Laatste Meting</div>
+            <div class="m-value">{huidig_verbruik} W</div>
         </div>
-        """, unsafe_allow_html=True)
+        <div class="metric-circle green-ring">
+            <div class="m-label">Gemiddelde</div>
+            <div class="m-value">{gem_verbruik} W</div>
+        </div>
+        <div class="metric-circle orange-ring">
+            <div class="m-label">Totaal Jaar</div>
+            <div class="m-value">{totaal_jaar} kWh</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # 7. HOOFD LAYOUT
-    col_map, col_chart = st.columns([1, 1])
+# 7. LAYOUT: KAART & GRAFIEK
+col_left, col_right = st.columns([1, 1])
 
-    with col_map:
-        st.markdown("<h3 style='color: white;'>Locatie op Kaart</h3>", unsafe_allow_html=True)
-        df_locaties['color'] = df_locaties['Aansluiting_ID'].apply(lambda x: 'Selected' if x == selected_id else 'Other')
-        fig_map = px.scatter_mapbox(df_locaties, lat="lat", lon="lon", 
-                                    color='color', color_discrete_map={'Selected': '#FF4B4B', 'Other': '#00d4ff'},
-                                    zoom=11, mapbox_style="open-street-map", hover_name='Aansluiting_ID')
-        fig_map.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, paper_bgcolor="rgba(0,0,0,0)", showlegend=False)
-        st.plotly_chart(fig_map, use_container_width=True)
+with col_left:
+    st.subheader("Locatie overzicht")
+    df_locaties['color'] = df_locaties['Aansluiting_ID'].apply(lambda x: 'Geselecteerd' if x == selected_id else 'Overig')
+    fig_map = px.scatter_mapbox(df_locaties, lat="lat", lon="lon", 
+                                color='color', color_discrete_map={'Geselecteerd': '#FF4B4B', 'Overig': '#00d4ff'},
+                                zoom=11, mapbox_style="open-street-map", hover_name='Aansluiting_ID')
+    fig_map.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, paper_bgcolor="rgba(0,0,0,0)", showlegend=False)
+    st.plotly_chart(fig_map, use_container_width=True)
 
-    with col_chart:
-        st.markdown("<h3 style='color: white;'>Verbruiksanalyse</h3>", unsafe_allow_html=True)
-        
-        # De weergave knoppen
-        period = st.radio("Kies periode:", ["Dag", "Week", "Maand", "Jaar"], horizontal=True, label_visibility="collapsed")
-        
-        plot_df = filtered_df.set_index('Timestamp')
-        if period == "Week":
-            plot_df = plot_df.resample('W').mean().reset_index()
-        elif period == "Maand" or period == "Jaar":
-            plot_df = plot_df.resample('M').mean().reset_index()
-        else:
-            plot_df = plot_df.reset_index()
+with col_right:
+    st.subheader("Verbruiksanalyse")
+    period = st.radio("Kies weergave:", ["Dag", "Week", "Maand"], horizontal=True, label_visibility="collapsed")
+    
+    plot_df = filtered_df.set_index('Timestamp')
+    if period == "Week": plot_df = plot_df.resample('W').mean().reset_index()
+    elif period == "Maand": plot_df = plot_df.resample('M').mean().reset_index()
+    else: plot_df = plot_df.reset_index()
 
-        fig_line = px.area(plot_df, x='Timestamp', y='Watt', template="plotly_dark")
-        fig_line.update_traces(line_color='#00d4ff', fillcolor='rgba(0, 212, 255, 0.1)')
-        fig_line.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="white"))
-        st.plotly_chart(fig_line, use_container_width=True)
-else:
-    st.info(f"Geen data beschikbaar voor {selected_id} in {selected_year}.")
+    fig_line = px.area(plot_df, x='Timestamp', y='Watt', template="plotly_dark")
+    fig_line.update_traces(line_color='#00d4ff', fillcolor='rgba(0, 212, 255, 0.1)')
+    fig_line.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="white"))
+    st.plotly_chart(fig_line, use_container_width=True)
+
+    towrite = BytesIO()
+    filtered_df.to_excel(towrite, index=False, engine='openpyxl')
+    st.download_button(label="📥 Download Jaardata (Excel)", data=towrite.getvalue(), 
+                       file_name=f"Verbruik_{selected_id}_{selected_year}.xlsx", mime="application/vnd.ms-excel")
